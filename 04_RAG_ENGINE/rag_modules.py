@@ -6,6 +6,9 @@ import chromadb
 from google import genai
 from google.genai import types
 from kiwipiepy import Kiwi
+# ★ [수정 1] LangChain 관련 임포트 추가
+from langchain.schema import SystemMessage, HumanMessage
+from langchain_google_genai import ChatGoogleGenerativeAI
 
 # 환경 변수 로드
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -18,7 +21,6 @@ client = genai.Client(api_key=GEMINI_API_KEY)
 # ChromaDB 경로 설정
 CHROMA_DB_PATH = os.path.join(project_root, 'chroma_db')
 
-# ★ 수정된 부분: 모델 이름을 변수로 관리 (안정적인 버전 사용)
 MODEL_NAME = "gemini-2.0-flash"
 
 # -----------------------------------------------------------------------------
@@ -26,29 +28,25 @@ MODEL_NAME = "gemini-2.0-flash"
 # -----------------------------------------------------------------------------
 class ChatMemory:
     def __init__(self):
-        self.history = []  # 대화 기록 [{"role": "user", "content": "..."}, ...]
+        self.history = []  
         self.user_profile = {
-            "current_score": None, # 현재 점수/실력
-            "target_score": None,  # 목표 점수
-            "target_period": None, # 목표 기간
-            "preferred_time": None # 선호 시간대
+            "current_score": None, 
+            "target_score": None,  
+            "target_period": None, 
+            "preferred_time": None 
         }
 
     def add_turn(self, role: str, content: str):
-        """대화 턴 추가"""
         self.history.append({"role": role, "content": content})
-        # 메모리 무한 증식 방지 (최근 10턴 유지)
         if len(self.history) > 10:
             self.history = self.history[-10:]
 
     def update_profile(self, new_slots: Dict):
-        """라우터가 추출한 정보로 프로필 업데이트"""
         for k, v in new_slots.items():
             if v is not None and v != "":
                 self.user_profile[k] = v
 
     def get_context_string(self) -> str:
-        """LLM에게 던져줄 대화 요약 문자열"""
         context = "--- [Conversation History] ---\n"
         for msg in self.history:
             context += f"{msg['role']}: {msg['content']}\n"
@@ -60,7 +58,7 @@ class ChatMemory:
         return context
 
 # -----------------------------------------------------------------------------
-# 2. HybridRetriever: 하이브리드 검색기 (Vector + Filter)
+# 2. HybridRetriever: 하이브리드 검색기
 # -----------------------------------------------------------------------------
 class HybridRetriever:
     def __init__(self):
@@ -69,13 +67,9 @@ class HybridRetriever:
         self.embedding_model = 'models/text-embedding-004'
 
     def search(self, collection_name: str, query: str, top_k: int = 10) -> str:
-        """
-        ChromaDB 검색 수행
-        """
         try:
             collection = self.chroma_client.get_collection(collection_name)
             
-            # 1. 쿼리 임베딩
             resp = client.models.embed_content(
                 model=self.embedding_model,
                 contents=query,
@@ -83,13 +77,11 @@ class HybridRetriever:
             )
             query_embedding = resp.embeddings[0].values
 
-            # 2. 검색 (Vector Search)
             results = collection.query(
                 query_embeddings=[query_embedding],
                 n_results=top_k
             )
 
-            # 3. 결과 포맷팅
             formatted_results = ""
             if not results['documents'] or not results['documents'][0]:
                 return "검색 결과가 없습니다."
@@ -104,7 +96,7 @@ class HybridRetriever:
             return f"검색 중 오류 발생: {str(e)}"
 
 # -----------------------------------------------------------------------------
-# 3. SemanticRouter: 의도 분류 및 슬롯 필링
+# 3. SemanticRouter: 의도 분류
 # -----------------------------------------------------------------------------
 ROUTER_SYSTEM_PROMPT = """
 You are the 'Intent Classifier' for an IELTS Academy Chatbot.
@@ -139,10 +131,9 @@ Analyze the user's input based on the conversation history and user profile.
 
 class SemanticRouter:
     def __init__(self):
-        self.model_name = MODEL_NAME # ★ 수정됨
+        self.model_name = MODEL_NAME
 
     def analyze(self, user_input: str, context: str) -> Dict:
-        """사용자 의도 및 슬롯 분석"""
         prompt = f"""
         {ROUTER_SYSTEM_PROMPT}
 
@@ -169,29 +160,36 @@ class SemanticRouter:
             return {"intent": "CHIT_CHAT", "reason": "Error", "slots_to_update": {}, "missing_slots": [], "search_query": user_input}
 
 # -----------------------------------------------------------------------------
-# 4. ConsultantAgent: 총괄 매니저 (Main Brain)
+# 4. ConsultantAgent: 총괄 매니저
 # -----------------------------------------------------------------------------
 CONSULTANT_SYSTEM_PROMPT = """
-당신은 이알피어학원의 **'AI 입학 상담 실장 아이린'**입니다.
-[대화 기억]과 [검색 결과]를 바탕으로, 전문적이고 신뢰감 있는 태도로 상담을 진행하세요.
+당신은 이알피어학원의 **'AI 입학 상담원 아이린(Irene)'**입니다.
+사용자에게 인간 상담원인 척 연기하지 말고, 도움이 필요한 부분을 빠르고 정확하게 찾아주는 **AI 어시스턴트로서의 정체성**을 유지하세요.
 
-[상담 가이드라인 - 엄격 준수]
-1. **톤앤매너(No Emoji):**
-   - **이모티콘이나 이모지를 절대 사용하지 마세요.** (예: 😊, 👍 금지)
-   - 가볍거나 유치한 표현을 삼가고, "하십시오", "합니다" 체의 정중하고 전문적인 비즈니스 화법을 구사하세요.
+[핵심 행동 지침]
+1. **AI 정체성 명시 및 톤앤매너:**
+   - **이모티콘, 이모지(😊, 👍) 절대 사용 금지.**
+   - 과도한 감정 이입이나 사람인 척하는 연기를 하지 마십시오.
+   - "하십시오", "합니다" 체의 정중하고 건조한 비즈니스 화법을 구사하세요.
+   - 답변 서두나 말미에 필요시 "저는 AI 상담원으로서..."와 같은 표현을 사용하여 기계적인 신뢰감을 주십시오.
 
-2. **현장 강의(Offline) 최우선 추천:**
-   - 학원의 주력 상품은 **강남/종로 캠퍼스의 현장 강의**입니다.
-   - 검색 결과에 현장 강의가 있다면 그것을 가장 매력적으로 포장하여 추천하세요.
-   - **온라인 강의(VOD)는 언급을 자제하세요.** 수요가 적은 사양 콘텐츠이므로, 사용자가 "지방에 산다", "도저히 시간이 안 맞다"라고 명시적으로 말하기 전까지는 먼저 권하지 마세요.
+2. **현장 강의(Offline) 최우선 추천 전략:**
+   - 학원의 핵심 상품은 **강남/종로 캠퍼스 현장 강의**입니다.
+   - [검색 결과]에 현장 강의가 있다면, 관리 시스템과 학습 분위기를 강조하여 우선적으로 추천하십시오.
+   - **온라인 강의(VOD)는 언급을 최소화하십시오.** 지방 거주, 해외 거주 등 물리적으로 불가능한 상황임이 명확할 때만 최후의 수단으로 제안하십시오.
 
-3. **맥락 연결 및 논리적 제안:**
-   - 사용자의 상황(직장인, 점수 등)을 언급하며 공감대를 형성하되, 과한 감탄사는 배제하세요.
-   - 예: "직장 생활과 병행하시느라 시간 내기가 어려우시겠지만, 목표 달성을 위해 최적의 반을 찾아보겠습니다."
+3. **[중요] 대화 주제 제한 (Guardrails):**
+   - 당신의 전문 분야는 오직 **'IELTS 시험'**과 **'학원 수강'**입니다.
+   - 맛집, 연애, 주식, 여행 등 학원과 무관한 사적인 질문(Chit-chat)이 들어오면 **정보 제공을 정중히 거절**하십시오.
+   - **[고급 스킬]** 거절에서 끝내지 말고, 해당 주제를 **'IELTS 스피킹 기출 주제'**로 연결하여 상담으로 복귀시키십시오.
+     - (예시: 맛집 질문 -> "저는 AI라 맛집은 알지 못합니다만, IELTS 스피킹 Part 1에서 'Favorite Food'는 빈출 주제입니다. 관련 표현을 알려드릴까요?")
 
-4. **Action 유도:**
-   - 상담의 마무리는 항상 **"정확한 반 배정을 위한 무료 레벨테스트"** 권유입니다.
-   - 기계적으로 반복하지 말고 자연스럽게 연결하세요.
+4. **Action 유도 (Call to Action):**
+   - 모든 상담의 결론은 사용자의 현재 실력을 파악하기 위한 **"무료 레벨테스트"** 권유로 이어져야 합니다.
+   - 기계적인 반복 대신, 사용자의 목표 점수 달성을 위한 '필수 절차'임을 논리적으로 설명하십시오.
+
+[참고: 검색 결과(Context)]
+아래 제공된 정보를 기반으로 사실에 입각하여 답변하십시오.
 """
 
 class ConsultantAgent:
@@ -199,13 +197,19 @@ class ConsultantAgent:
         self.memory = ChatMemory()
         self.router = SemanticRouter()
         self.retriever = HybridRetriever()
+        
+        # ★ [수정 2] self.llm 객체 초기화 (LangChain)
+        self.llm = ChatGoogleGenerativeAI(
+            model=MODEL_NAME,
+            google_api_key=GEMINI_API_KEY,
+            temperature=0
+        )
 
     def run(self, user_input: str) -> str:
-        # 1. 메모리에 사용자 질문 기록
         self.memory.add_turn("user", user_input)
         context = self.memory.get_context_string()
 
-        # 2. 라우터 분석 (CoT: 생각 단계)
+        # 1. 의도 분석
         analysis = self.router.analyze(user_input, context)
         intent = analysis.get("intent")
         slots = analysis.get("slots_to_update", {})
@@ -214,26 +218,44 @@ class ConsultantAgent:
 
         print(f"🧐 [Analysis] Intent: {intent} | Missing: {missing}")
 
-        # 3. 프로필 업데이트
         self.memory.update_profile(slots)
-
         final_response = ""
 
-        # 4. 시나리오 분기 (Logic Flow)
-        
-        # [CASE 1] 잡담 (CHIT_CHAT)
+        # =================================================================
+        # [수정된 부분] CASE 1: 잡담/공격/인사 처리 (TMI 제거 및 단호한 대응)
+        # =================================================================
+        # [CASE 1] 잡담/공격 처리 (건조한 거절 모드)
         if intent == "CHIT_CHAT":
-            final_response = self._generate_chit_chat(user_input)
+            steering_prompt = f"""
+            [상황]
+            사용자가 '{user_input}'라고 말했습니다. 의도는 CHIT_CHAT(잡담/인사/공격)입니다.
 
-        # [CASE 2] 시간표 질문인데 필수 정보 부족 (Slot Filling) ★ 수정됨
-        # 개수(len)로 세지 않고, 핵심 필드(Time, Score)가 비어있으면 무조건 되묻기
+            [당신의 임무]
+            1. **단순 인사(안녕):** "안녕하세요, 이알피어학원 AI 상담원 아이린입니다. 무엇을 도와드릴까요?"라고 짧게 응대.
+            2. **그 외 모든 잡담 및 공격:** - 변명이나 부연 설명 없이, 딱 한 문장으로 답변을 거절하십시오.
+               - 답변 예시: "죄송합니다. 저는 아이엘츠 상담 전용 AI이므로 학원 업무와 무관한 내용에는 답변드릴 수 없습니다."
+            
+            [제약 사항]
+            - 이모티콘 사용 금지.
+            - 스피킹 주제로 연결 금지 (절대 하지 말 것).
+            - 보안 관련 질문은 "권한이 없습니다"라고 일축할 것.
+            """
+    
+            response = self.llm.invoke([
+                SystemMessage(content=CONSULTANT_SYSTEM_PROMPT),
+                HumanMessage(content=steering_prompt)
+            ])
+            
+            final_response = response.content
+
+        # [CASE 2] 시간표 질문 - 필수 정보 누락시 되묻기
         elif intent == "TIMETABLE" and (not self.memory.user_profile.get("preferred_time") or not self.memory.user_profile.get("current_score")):
-             # 로그 확인용 프린트
-             print(f"🛑 필수 정보 누락! 되묻기 실행 (Time: {self.memory.user_profile.get('preferred_time')}, Score: {self.memory.user_profile.get('current_score')})")
+             print(f"🛑 필수 정보 누락! 되묻기 실행")
              final_response = self._generate_ask_more(missing)
         
-        # [CASE 3] 검색 필요 (FAQ, REVIEW, 또는 정보 충분한 TIMETABLE)
+        # [CASE 3] 검색 필요 (FAQ, REVIEW, 정보 충분한 TIMETABLE)
         else:
+            # ... (기존과 동일) ...
             collection_map = {
                 "TIMETABLE": "timetable",
                 "REVIEW": "review",
@@ -245,7 +267,6 @@ class ConsultantAgent:
             search_results = self.retriever.search(collection_name, enhanced_query, top_k=10)
             
             if "검색 결과가 없습니다" in search_results:
-                print("⚠️ 검색 결과 0건 -> Fallback 실행")
                 fallback_query = "아이엘츠 온라인 강의 인강 추천"
                 search_results = self.retriever.search("timetable", fallback_query)
                 search_results = f"[알림: 원하시는 조건의 강의가 없어 온라인 강의 정보를 가져왔습니다.]\n{search_results}"
@@ -257,35 +278,22 @@ class ConsultantAgent:
         return final_response
 
     def _profile_to_string(self):
-        """프로필 정보를 검색어용 문자열로 변환"""
         p = self.memory.user_profile
         text = ""
         if p['preferred_time']: text += f"{p['preferred_time']} "
         if p['target_score']: text += f"목표{p['target_score']} "
         return text
 
-    def _generate_chit_chat(self, user_input):
-        """가벼운 대화 생성"""
-        prompt = f"당신은 친절한 아이엘츠 AI 상담원입니다. 다음 말에 자연스럽게 대답하세요: {user_input}"
-        # ★ 수정됨: 변수 사용
-        resp = client.models.generate_content(model=MODEL_NAME, contents=prompt)
-        return resp.text
-
     def _generate_ask_more(self, missing_slots):
-        """부족한 정보 되묻기"""
         prompt = f"""
         사용자가 아이엘츠 수업을 찾고 있는데, 다음 정보가 부족합니다: {missing_slots}.
         AI 상담원으로서, 정확한 추천을 위해 이 정보들을 자연스럽게 물어보는 문장을 작성하세요.
         (예: "목표 점수가 어떻게 되시나요?", "수업 가능한 시간대가 있으신가요?")
         """
-        # ★ 수정됨: 변수 사용
         resp = client.models.generate_content(model=MODEL_NAME, contents=prompt)
         return resp.text
 
     def _generate_final_answer(self, user_input, search_results):
-        """RAG 최종 답변 생성 (전문성 강화 & VOD 억제 버전)"""
-        
-        # 사용자의 제약 조건을 강조하는 텍스트 생성
         constraints = ""
         p = self.memory.user_profile
         if p.get('preferred_time') == 'Weekend':
