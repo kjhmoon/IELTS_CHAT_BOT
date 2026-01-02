@@ -5,9 +5,6 @@ from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 
-
-
-
 current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
 env_path = os.path.join(parent_dir, '.env')
@@ -17,9 +14,6 @@ load_dotenv(dotenv_path=env_path)
 api_key = os.getenv("GEMINI_API_KEY")
 if not api_key:
     raise ValueError(f"API Key not found. Checked path: {env_path}")
-
-
-
 
 client = genai.Client(api_key=api_key)
 
@@ -34,22 +28,15 @@ def create_embedding_payload(structured_json):
     """
     data = structured_json
     
-    
-    
-    
     if isinstance(data, list):
         if len(data) > 0:
             data = data[0] 
         else:
             return None 
-    
-    
     if not isinstance(data, dict) or 'search_criteria' not in data:
         print(f"⚠️ Invalid data structure skipped: {type(data)}")
         return None
-    
 
-    
     try:
         text_to_embed = f"""
         의도: {data['search_criteria'].get('intent', '')}
@@ -64,7 +51,6 @@ def create_embedding_payload(structured_json):
         return None
     
     try:
-        
         response = client.models.embed_content(
             model=EMBEDDING_MODEL,
             contents=text_to_embed,
@@ -75,12 +61,9 @@ def create_embedding_payload(structured_json):
         vector = response.embeddings[0].values
         
     except Exception as e:
-        
         doc_id = data.get('meta_data', {}).get('doc_id', 'Unknown')
         print(f"⚠️ Error generating embedding for {doc_id}: {e}")
         return None
-    
-    
     metadata = {
         "category": data['meta_data'].get('category', ''),
         "intent": data['search_criteria'].get('intent', ''),
@@ -96,7 +79,7 @@ def create_embedding_payload(structured_json):
     }
 
 def main():
-    
+    # 1. 데이터 로드
     try:
         with open(INPUT_FILE, 'r', encoding='utf-8') as f:
             structured_faqs = json.load(f)
@@ -106,7 +89,7 @@ def main():
         print("Please run '01_preprocess_data.py' first.")
         return
 
-    
+    # 2. 전체 데이터 임베딩 처리
     final_db_data = []
     
     print("🚀 Starting embedding process...")
@@ -119,10 +102,10 @@ def main():
         else:
             print(f"   [{idx+1}/{len(structured_faqs)}] Skipped (Invalid Data)")
         
-        
+        # API 속도 제한 고려
         time.sleep(0.5)
 
-    
+    # 3. 결과 저장
     with open(OUTPUT_FILE, 'w', encoding='utf-8') as f:
         json.dump(final_db_data, f, indent=2, ensure_ascii=False)
     
