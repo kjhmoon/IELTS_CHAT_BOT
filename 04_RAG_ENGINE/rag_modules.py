@@ -6,11 +6,10 @@ import chromadb
 from google import genai
 from google.genai import types
 from kiwipiepy import Kiwi
-# ★ [수정 1] LangChain 관련 임포트 추가
 from langchain.schema import SystemMessage, HumanMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
 
-# 환경 변수 로드
+
 current_dir = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.dirname(current_dir)
 load_dotenv(os.path.join(project_root, '.env'))
@@ -18,14 +17,14 @@ load_dotenv(os.path.join(project_root, '.env'))
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 client = genai.Client(api_key=GEMINI_API_KEY)
 
-# ChromaDB 경로 설정
+
 CHROMA_DB_PATH = os.path.join(project_root, 'chroma_db')
 
 MODEL_NAME = "gemini-2.0-flash"
 
-# -----------------------------------------------------------------------------
-# 1. ChatMemory: 대화 기억 및 사용자 프로필 관리
-# -----------------------------------------------------------------------------
+
+
+
 class ChatMemory:
     def __init__(self):
         self.history = []  
@@ -57,9 +56,9 @@ class ChatMemory:
             context += f"- {k}: {val}\n"
         return context
 
-# -----------------------------------------------------------------------------
-# 2. HybridRetriever: 하이브리드 검색기
-# -----------------------------------------------------------------------------
+
+
+
 class HybridRetriever:
     def __init__(self):
         self.chroma_client = chromadb.PersistentClient(path=CHROMA_DB_PATH)
@@ -95,9 +94,9 @@ class HybridRetriever:
         except Exception as e:
             return f"검색 중 오류 발생: {str(e)}"
 
-# -----------------------------------------------------------------------------
-# 3. SemanticRouter: 의도 분류
-# -----------------------------------------------------------------------------
+
+
+
 ROUTER_SYSTEM_PROMPT = """
 You are the 'Intent Classifier' for an IELTS Academy Chatbot.
 Analyze the user's input based on the conversation history and user profile.
@@ -159,9 +158,9 @@ class SemanticRouter:
             print(f"Router Error: {e}")
             return {"intent": "CHIT_CHAT", "reason": "Error", "slots_to_update": {}, "missing_slots": [], "search_query": user_input}
 
-# -----------------------------------------------------------------------------
-# 4. ConsultantAgent: 총괄 매니저
-# -----------------------------------------------------------------------------
+
+
+
 CONSULTANT_SYSTEM_PROMPT = """
 당신은 이알피어학원의 **'AI 입학 상담원 아이린(Irene)'**입니다.
 사용자에게 인간 상담원인 척 연기하지 말고, 도움이 필요한 부분을 빠르고 정확하게 찾아주는 **AI 어시스턴트로서의 정체성**을 유지하세요.
@@ -198,7 +197,7 @@ class ConsultantAgent:
         self.router = SemanticRouter()
         self.retriever = HybridRetriever()
         
-        # ★ [수정 2] self.llm 객체 초기화 (LangChain)
+        
         self.llm = ChatGoogleGenerativeAI(
             model=MODEL_NAME,
             google_api_key=GEMINI_API_KEY,
@@ -209,7 +208,7 @@ class ConsultantAgent:
         self.memory.add_turn("user", user_input)
         context = self.memory.get_context_string()
 
-        # 1. 의도 분석
+        
         analysis = self.router.analyze(user_input, context)
         intent = analysis.get("intent")
         slots = analysis.get("slots_to_update", {})
@@ -221,10 +220,10 @@ class ConsultantAgent:
         self.memory.update_profile(slots)
         final_response = ""
 
-        # =================================================================
-        # [수정된 부분] CASE 1: 잡담/공격/인사 처리 (TMI 제거 및 단호한 대응)
-        # =================================================================
-        # [CASE 1] 잡담/공격 처리 (건조한 거절 모드)
+        
+        
+        
+        
         if intent == "CHIT_CHAT":
             steering_prompt = f"""
             [상황]
@@ -248,14 +247,13 @@ class ConsultantAgent:
             
             final_response = response.content
 
-        # [CASE 2] 시간표 질문 - 필수 정보 누락시 되묻기
+        
         elif intent == "TIMETABLE" and (not self.memory.user_profile.get("preferred_time") or not self.memory.user_profile.get("current_score")):
              print(f"🛑 필수 정보 누락! 되묻기 실행")
              final_response = self._generate_ask_more(missing)
         
-        # [CASE 3] 검색 필요 (FAQ, REVIEW, 정보 충분한 TIMETABLE)
+        
         else:
-            # ... (기존과 동일) ...
             collection_map = {
                 "TIMETABLE": "timetable",
                 "REVIEW": "review",
@@ -273,7 +271,7 @@ class ConsultantAgent:
 
             final_response = self._generate_final_answer(user_input, search_results)
 
-        # 5. 메모리에 봇 답변 기록
+        
         self.memory.add_turn("assistant", final_response)
         return final_response
 

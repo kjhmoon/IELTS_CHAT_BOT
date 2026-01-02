@@ -5,9 +5,9 @@ from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 
-# ------------------------------------------------------------------
-# [경로 설정]
-# ------------------------------------------------------------------
+
+
+
 current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
 env_path = os.path.join(parent_dir, '.env')
@@ -22,7 +22,7 @@ client = genai.Client(api_key=api_key)
 
 EMBEDDING_MODEL = 'models/text-embedding-004'
 
-# 입출력 파일
+
 INPUT_FILE = os.path.join(current_dir, 'structured_reviews.json')
 OUTPUT_FILE = os.path.join(current_dir, 'review_db_ready.json')
 
@@ -32,14 +32,14 @@ def create_embedding_payload(review_data):
     """
     data = review_data
     
-    # 리스트 포장 벗기기
+    
     if isinstance(data, list):
         data = data[0] if len(data) > 0 else None
     
     if not isinstance(data, dict):
         return None
 
-    # 1. 임베딩할 텍스트 생성 (Serialize)
+    
     criteria = data.get('search_criteria', {})
     display = data.get('display_info', {})
     facts = data.get('fact_sheet', {})
@@ -55,7 +55,7 @@ def create_embedding_payload(review_data):
     """
     
     try:
-        # 2. 임베딩 생성
+        
         response = client.models.embed_content(
             model=EMBEDDING_MODEL,
             contents=text_to_embed,
@@ -69,23 +69,23 @@ def create_embedding_payload(review_data):
         print(f"⚠️ 임베딩 생성 실패 ({data['meta_data'].get('doc_id')}): {e}")
         return None
     
-    # -----------------------------------------------------------
-    # 3. 메타데이터 구성 (여기가 중요!)
-    # -----------------------------------------------------------
+    
+    
+    
     metadata = {
         "category": "수강후기",
         
-        # ★★★ 핵심: 원본 링크 저장 ★★★
-        # 나중에 챗봇이 "자세한 건 여기서 보세요" 하고 링크를 줄 수 있음
+        
+        
         "url": data['meta_data'].get('source_url', ''), 
         
-        # 필터링용 데이터
+        
         "status": criteria.get('status', ''),
         
-        # UI 표시용 데이터 (JSON 문자열로 저장)
+        
         "display_json": json.dumps(display, ensure_ascii=False),
         
-        # 답변 생성 시 참고할 팩트
+        
         "fact_json": json.dumps(facts, ensure_ascii=False)
     }
     
@@ -97,7 +97,7 @@ def create_embedding_payload(review_data):
     }
 
 def main():
-    # 1. 데이터 로드
+    
     try:
         with open(INPUT_FILE, 'r', encoding='utf-8') as f:
             structured_data = json.load(f)
@@ -107,7 +107,7 @@ def main():
         print("Please run '01_preprocess_reviews.py' first.")
         return
 
-    # 2. 벡터화
+    
     final_db_data = []
     
     print("🚀 Starting embedding process for Reviews...")
@@ -119,10 +119,10 @@ def main():
             final_db_data.append(payload)
             print(f"   [{idx+1}/{len(structured_data)}] Vectorized: {payload['id']}")
         
-        # 임베딩 API는 속도 제한이 널널해서 0.5초면 충분합니다.
+        
         time.sleep(0.5)
 
-    # 3. 저장
+    
     with open(OUTPUT_FILE, 'w', encoding='utf-8') as f:
         json.dump(final_db_data, f, indent=2, ensure_ascii=False)
     

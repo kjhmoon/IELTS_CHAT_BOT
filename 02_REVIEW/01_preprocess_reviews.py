@@ -7,9 +7,9 @@ from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 
-# ------------------------------------------------------------------
-# [경로 설정]
-# ------------------------------------------------------------------
+
+
+
 current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
 env_path = os.path.join(parent_dir, '.env')
@@ -22,30 +22,30 @@ if not api_key:
 
 client = genai.Client(api_key=api_key)
 
-# ------------------------------------------------------------------
-# [1단계] 정규표현식 비식별화 (기계적 삭제)
-# ------------------------------------------------------------------
+
+
+
 def clean_sensitive_patterns(text):
     if not isinstance(text, str):
         return ""
     
-    # 전화번호 (010-XXXX-XXXX)
+    
     phone_pattern = r'01[016789]-?\d{3,4}-?\d{4}'
     text = re.sub(phone_pattern, "(전화번호 삭제됨)", text)
     
-    # 이메일
+    
     email_pattern = r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}'
     text = re.sub(email_pattern, "(이메일 삭제됨)", text)
     
-    # 주민번호
+    
     ssn_pattern = r'\d{6}-[1-4]\d{6}'
     text = re.sub(ssn_pattern, "(주민번호 삭제됨)", text)
     
     return text
 
-# ------------------------------------------------------------------
-# [2단계] LLM 프롬프트 (구조화 & 2차 비식별화)
-# ------------------------------------------------------------------
+
+
+
 PROMPT_TEMPLATE = """
 당신은 IELTS 학원의 '수강후기 데이터'를 정제하는 AI 전문가입니다.
 제공된 [Raw Review]는 '수강생의 원본 후기'와 그 밑에 달린 '학원 직원/선생님의 답글'이 섞여 있을 수 있습니다.
@@ -94,20 +94,20 @@ PROMPT_TEMPLATE = """
 """
 
 def process_review_item(row):
-    # 컬럼 이름('Title', 'Content', 'Link')으로 데이터 가져오기
+    
     title_raw = row.get('Title', '')
     content_raw = row.get('Content', '')
     link_raw = row.get('Link', '') 
 
-    # 1. Regex 청소
+    
     title_clean = clean_sensitive_patterns(str(title_raw))
     content_clean = clean_sensitive_patterns(str(content_raw))
     
-    # 내용이 너무 짧으면 스킵
+    
     if len(content_clean) < 10:
         return None
 
-    # 2. 프롬프트 생성
+    
     prompt = PROMPT_TEMPLATE.format(
         title=title_clean,
         content=content_clean,
@@ -123,17 +123,17 @@ def process_review_item(row):
             )
         )
         
-        # JSON 파싱
+        
         parsed_data = json.loads(response.text)
         
-        # -----------------------------------------------------------
-        # ★★★ [FIX] 리스트([])로 감싸져 있으면 알맹이({})만 꺼내기 ★★★
-        # -----------------------------------------------------------
+        
+        
+        
         if isinstance(parsed_data, list):
             if len(parsed_data) > 0:
-                parsed_data = parsed_data[0] # 첫 번째 요소 추출
+                parsed_data = parsed_data[0] 
             else:
-                return None # 빈 리스트면 에러 처리
+                return None 
         
         return parsed_data
         
@@ -141,19 +141,19 @@ def process_review_item(row):
         print(f"❌ 변환 API 에러: {e}")
         return None
 
-# ------------------------------------------------------------------
-# [실행부]
-# ------------------------------------------------------------------
+
+
+
 if __name__ == "__main__":
     input_file = os.path.join(current_dir, 'raw_reviews.xlsx')
     output_file = os.path.join(current_dir, 'structured_reviews.json')
     
     try:
-        # header=0 (기본값)으로 설정하여 첫 줄을 제목으로 읽음
+        
         df = pd.read_excel(input_file, engine='openpyxl')
         print(f"📂 엑셀 로드 성공! 총 {len(df)}건")
         
-        # 컬럼 확인
+        
         expected_cols = ['Title', 'MetaInfo', 'Content', 'Link']
         missing_cols = [col for col in expected_cols if col not in df.columns]
         
@@ -182,10 +182,10 @@ if __name__ == "__main__":
         else:
             print(f"🚫 스킵됨 (내용 부족 등)")
         
-        # API 대기
+        
         time.sleep(10)
 
-    # 결과 저장
+    
     with open(output_file, 'w', encoding='utf-8') as f:
         json.dump(structured_data, f, indent=2, ensure_ascii=False)
         

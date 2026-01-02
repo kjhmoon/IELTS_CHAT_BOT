@@ -5,9 +5,6 @@ from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 
-# ------------------------------------------------------------------
-# [경로 설정]
-# ------------------------------------------------------------------
 current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
 env_path = os.path.join(parent_dir, '.env')
@@ -18,14 +15,8 @@ api_key = os.getenv("GEMINI_API_KEY")
 if not api_key:
     raise ValueError(f"API Key not found. Checked path: {env_path}")
 
-# ------------------------------------------------------------------
-# [최신 SDK] 클라이언트 초기화
-# ------------------------------------------------------------------
 client = genai.Client(api_key=api_key)
 
-# ------------------------------------------------------------------
-# [데이터 로드]
-# ------------------------------------------------------------------
 input_file_path = os.path.join(current_dir, 'raw_faq.json')
 
 try:
@@ -36,9 +27,6 @@ except FileNotFoundError:
     print(f" 오류: '{input_file_path}' 파일을 찾을 수 없습니다.")
     raw_faqs = []
 
-# ------------------------------------------------------------------
-# [프롬프트 템플릿]
-# ------------------------------------------------------------------
 PROMPT_TEMPLATE = """
 당신은 IELTS 학원의 전문 상담 데이터를 관리하는 AI입니다.
 아래 제공되는 [Raw Data]를 분석하여, 지정된 [Target JSON Schema] 형식으로 완벽하게 변환하세요.
@@ -74,9 +62,6 @@ PROMPT_TEMPLATE = """
 }}
 """
 
-# ------------------------------------------------------------------
-# [핵심 로직] 변환 함수
-# ------------------------------------------------------------------
 def transform_raw_to_structured(raw_item):
     prompt = PROMPT_TEMPLATE.format(
         category=raw_item.get('category', '기타'),
@@ -85,7 +70,6 @@ def transform_raw_to_structured(raw_item):
     )
     
     try:
-        # 모델: gemini-2.0-flash-exp (속도 제한 10 RPM)
         response = client.models.generate_content(
             model='gemini-2.0-flash-exp',
             contents=prompt,
@@ -98,9 +82,6 @@ def transform_raw_to_structured(raw_item):
         print(f" 변환 실패 (제목: {raw_item.get('subject')}): {e}")
         return None
 
-# ------------------------------------------------------------------
-# [실행부]
-# ------------------------------------------------------------------
 if __name__ == "__main__":
     if not raw_faqs:
         print("처리할 데이터가 없습니다. 종료합니다.")
@@ -111,24 +92,18 @@ if __name__ == "__main__":
         print(f"🔄 데이터 변환 시작... (안전 모드: 10초 간격)")
         
         for idx, item in enumerate(raw_faqs):
-            start_time = time.time() # 시작 시간 기록
+            start_time = time.time() 
             
             result = transform_raw_to_structured(item)
             if result:
                 structured_faqs.append(result)
                 print(f"   [{idx+1}/{total_count}] 성공: {item.get('subject')[:15]}...")
             
-            # -----------------------------------------------------------
-            # [속도 조절 구간]
-            # -----------------------------------------------------------
-            # gemini-2.0-flash-exp 제한: 분당 10회 (6초에 1회)
-            # 안전하게 10초 대기 설정 (확실히 에러 안 남)
             wait_time = 10 
             
             print(f"      ㄴ ⏳ 다음 요청 대기 중... ({wait_time}초)")
             time.sleep(wait_time) 
 
-        # 파일 저장
         output_path = os.path.join(current_dir, 'structured_faq.json')
         
         with open(output_path, 'w', encoding='utf-8') as f:

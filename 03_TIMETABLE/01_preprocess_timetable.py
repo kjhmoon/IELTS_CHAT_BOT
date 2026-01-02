@@ -5,33 +5,33 @@ from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 
-# ------------------------------------------------------------------
-# [경로 설정] .env 및 파일 경로 자동 인식
-# ------------------------------------------------------------------
-# 1. 현재 파일의 폴더 경로 (03_TIMETABLE)
+
+
+
+
 current_dir = os.path.dirname(os.path.abspath(__file__))
 
-# 2. 프로젝트 루트 폴더
+
 parent_dir = os.path.dirname(current_dir)
 
-# 3. .env 파일 경로 조합
+
 env_path = os.path.join(parent_dir, '.env')
 
-# 4. 환경 변수 로드
+
 load_dotenv(dotenv_path=env_path)
 
 api_key = os.getenv("GEMINI_API_KEY")
 if not api_key:
     raise ValueError(f"API Key not found. Checked path: {env_path}")
 
-# ------------------------------------------------------------------
-# [최신 SDK] 클라이언트 초기화
-# ------------------------------------------------------------------
+
+
+
 client = genai.Client(api_key=api_key)
 
-# ------------------------------------------------------------------
-# [데이터 로드] raw_timetable.json 읽기
-# ------------------------------------------------------------------
+
+
+
 input_file_path = os.path.join(current_dir, 'raw_timetable.json')
 
 try:
@@ -42,9 +42,9 @@ except FileNotFoundError:
     print(f"❌ 오류: '{input_file_path}' 파일을 찾을 수 없습니다.")
     raw_data = []
 
-# ------------------------------------------------------------------
-# [프롬프트 템플릿] ★ 시간표 전용 스키마 적용 ★
-# ------------------------------------------------------------------
+
+
+
 PROMPT_TEMPLATE = """
 당신은 IELTS 학원 시간표 데이터를 구조화하는 AI 데이터 엔지니어입니다.
 아래 [Raw Data]를 분석하여, [Target JSON Schema]에 맞춰 완벽하게 변환하세요.
@@ -99,11 +99,11 @@ PROMPT_TEMPLATE = """
 }}
 """
 
-# ------------------------------------------------------------------
-# [핵심 로직] 변환 함수
-# ------------------------------------------------------------------
+
+
+
 def transform_timetable_data(raw_item):
-    # 데이터 필드가 비어있을 경우 대비
+    
     prompt = PROMPT_TEMPLATE.format(
         m_jiyuk=raw_item.get('m_jiyuk', 'Unknown'),
         m_name=raw_item.get('m_name', '제목없음'),
@@ -126,9 +126,9 @@ def transform_timetable_data(raw_item):
         print(f"❌ 변환 실패 (강좌명: {raw_item.get('m_name')}): {e}")
         return None
 
-# ------------------------------------------------------------------
-# [실행부]
-# ------------------------------------------------------------------
+
+
+
 if __name__ == "__main__":
     if not raw_data:
         print("처리할 데이터가 없습니다. 종료합니다.")
@@ -139,21 +139,21 @@ if __name__ == "__main__":
         print(f"🔄 시간표 데이터 구조화 시작... (안전 모드: 10초 간격)")
         
         for idx, item in enumerate(raw_data):
-            # 변환 실행
+            
             result = transform_timetable_data(item)
             
             if result:
                 structured_timetable.append(result)
                 print(f"   [{idx+1}/{total_count}] 성공: {item.get('m_name')[:20]}...")
             
-            # -----------------------------------------------------------
-            # [속도 조절] Gemini 2.0 Flash Exp 제한 고려 (10초 대기)
-            # -----------------------------------------------------------
+            
+            
+            
             wait_time = 10
             print(f"      ㄴ ⏳ API 대기 중... ({wait_time}초)")
             time.sleep(wait_time) 
 
-        # 파일 저장
+        
         output_path = os.path.join(current_dir, 'structured_timetable.json')
         
         with open(output_path, 'w', encoding='utf-8') as f:

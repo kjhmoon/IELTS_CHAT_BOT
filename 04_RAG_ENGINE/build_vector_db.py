@@ -8,9 +8,9 @@ import chromadb
 from google import genai
 from google.genai import types
 
-# ------------------------------------------------------------------
-# [1] 환경 설정 및 초기화
-# ------------------------------------------------------------------
+
+
+
 current_dir = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.dirname(current_dir)
 
@@ -29,9 +29,9 @@ os.makedirs(CHROMA_DB_PATH, exist_ok=True)
 chroma_client = chromadb.PersistentClient(path=CHROMA_DB_PATH)
 EMBEDDING_MODEL = 'models/text-embedding-004'
 
-# ------------------------------------------------------------------
-# [Helper] 리스트 평탄화 함수
-# ------------------------------------------------------------------
+
+
+
 def recursive_flatten(data):
     if isinstance(data, list):
         if len(data) == 0:
@@ -44,9 +44,9 @@ def recursive_flatten(data):
         return data
     return []
 
-# ------------------------------------------------------------------
-# [Helper] 메타데이터 청소 함수 (None -> "") ★★★ 핵심 수정
-# ------------------------------------------------------------------
+
+
+
 def clean_metadata(meta: Dict) -> Dict:
     """
     ChromaDB는 metadata 값으로 None(Null)을 허용하지 않습니다.
@@ -56,20 +56,20 @@ def clean_metadata(meta: Dict) -> Dict:
     cleaned = {}
     for k, v in meta.items():
         if v is None:
-            cleaned[k] = ""  # None을 빈 문자열로 변경
+            cleaned[k] = ""  
         elif isinstance(v, (list, dict)):
-            cleaned[k] = json.dumps(v, ensure_ascii=False) # 리스트/딕셔너리는 문자열로
+            cleaned[k] = json.dumps(v, ensure_ascii=False) 
         else:
             cleaned[k] = v
     return cleaned
 
-# ------------------------------------------------------------------
-# [2] 하이브리드 토큰 생성 함수 (BM25용)
-# ------------------------------------------------------------------
+
+
+
 def generate_bm25_tokens(tags: List[str], content_text: str) -> str:
     tokens = []
     
-    # 1. 태그 가중치 (x2)
+    
     if tags:
         if isinstance(tags, str):
             tags = [tags]
@@ -77,7 +77,7 @@ def generate_bm25_tokens(tags: List[str], content_text: str) -> str:
         tokens.extend(clean_tags) 
         tokens.extend(clean_tags) 
     
-    # 2. 본문 명사 추출
+    
     if content_text:
         try:
             result = kiwi.analyze(str(content_text))
@@ -89,12 +89,12 @@ def generate_bm25_tokens(tags: List[str], content_text: str) -> str:
 
     return " ".join(tokens)
 
-# ------------------------------------------------------------------
-# [3] 적재 로직
-# ------------------------------------------------------------------
+
+
+
 def process_and_insert(collection_name: str, structured_path: str, ready_path: str, type_config: Dict):
     
-    # 1. 컬렉션 초기화
+    
     try:
         chroma_client.delete_collection(collection_name)
         print(f"🗑️  기존 컬렉션 삭제 완료: {collection_name}")
@@ -103,9 +103,9 @@ def process_and_insert(collection_name: str, structured_path: str, ready_path: s
     
     collection = chroma_client.create_collection(name=collection_name)
     
-    # -------------------------------------------------------
-    # CASE A: 이미 벡터화된 파일이 있는 경우 (API 비용 절약!)
-    # -------------------------------------------------------
+    
+    
+    
     if os.path.exists(ready_path):
         print(f"♻️  [재활용 모드] 벡터 파일 발견! ({os.path.basename(ready_path)}) - API 호출을 생략합니다.")
         with open(ready_path, 'r', encoding='utf-8') as f:
@@ -129,7 +129,7 @@ def process_and_insert(collection_name: str, structured_path: str, ready_path: s
                 try:
                     if not isinstance(item, dict): continue
 
-                    # ID 중복 방지
+                    
                     raw_id = item.get('id', 'unknown')
                     unique_doc_id = f"{raw_id}_{total_processed + idx_in_batch}"
 
@@ -137,7 +137,7 @@ def process_and_insert(collection_name: str, structured_path: str, ready_path: s
                     meta = item.get('metadata', {})
                     text_content = item.get('document', '')
                     
-                    # BM25 토큰 추가
+                    
                     tags = []
                     if 'display_json' in meta:
                         try:
@@ -149,13 +149,13 @@ def process_and_insert(collection_name: str, structured_path: str, ready_path: s
                     bm25_text = generate_bm25_tokens(tags, text_content)
                     meta['bm25_tokens'] = bm25_text 
                     
-                    # ★ 메타데이터 청소 (None 제거)
+                    
                     clean_meta = clean_metadata(meta)
 
                     ids.append(unique_doc_id)
                     embeddings.append(vector)
                     documents.append(text_content)
-                    metadatas.append(clean_meta) # 청소된 메타데이터 사용
+                    metadatas.append(clean_meta) 
                     
                 except Exception as e:
                     print(f"⚠️ 데이터 처리 에러: {e}")
@@ -171,9 +171,9 @@ def process_and_insert(collection_name: str, structured_path: str, ready_path: s
                 
         return 
 
-    # -------------------------------------------------------
-    # CASE B: 벡터 파일이 없고 구조화 파일만 있는 경우 (API 사용)
-    # -------------------------------------------------------
+    
+    
+    
     print(f"🆕 [신규 생성 모드] 벡터 파일이 없습니다. {os.path.basename(structured_path)}에서 임베딩을 생성합니다.")
     
     if not os.path.exists(structured_path):
@@ -224,7 +224,7 @@ def process_and_insert(collection_name: str, structured_path: str, ready_path: s
                 bm25_text = generate_bm25_tokens(tags, content_for_noun)
                 metadata_payload['bm25_tokens'] = bm25_text
 
-                # ★ 메타데이터 청소 (None 제거)
+                
                 clean_meta = clean_metadata(metadata_payload)
 
                 ids.append(unique_doc_id)
@@ -247,13 +247,13 @@ def process_and_insert(collection_name: str, structured_path: str, ready_path: s
                 print(f"❌ API 에러: {e}")
                 time.sleep(10)
 
-# ------------------------------------------------------------------
-# [4] 메인 실행부
-# ------------------------------------------------------------------
+
+
+
 def main():
     print("🚀 RAG Vector DB 구축 시작 (Null Cleaning Applied)")
 
-    # 1. FAQ
+    
     process_and_insert(
         'faq', 
         os.path.join(project_root, '01_FAQ', 'structured_faq.json'),
@@ -261,7 +261,7 @@ def main():
         {'type': 'faq'}
     )
 
-    # 2. Review
+    
     process_and_insert(
         'review', 
         os.path.join(project_root, '02_REVIEW', 'structured_reviews.json'),
@@ -269,7 +269,7 @@ def main():
         {'type': 'review'}
     )
 
-    # 3. Timetable
+    
     process_and_insert(
         'timetable', 
         os.path.join(project_root, '03_TIMETABLE', 'structured_timetable.json'),
